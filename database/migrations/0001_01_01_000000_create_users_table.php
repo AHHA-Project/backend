@@ -17,6 +17,14 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
+            
+            // Role system
+            $table->enum('role', ['user', 'admin'])->default('user');
+            
+            // OTP fields for email verification
+            $table->string('otp', 6)->nullable();
+            $table->timestamp('otp_expires_at')->nullable();
+            
             $table->rememberToken();
             $table->timestamps();
         });

@@ -4,73 +4,82 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Notifications\SendOtpNotification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 class AuthenticationController extends Controller
 {
     /**
      * Register a new account.
      */
-    // public function register(Request $request)
-    // {
-    //     $request->validate([
-    //         'name' => 'required|string|min:4',
-    //         'email' => 'required|string|email|max:255|unique:users',
-    //         'password' => 'required|string|min:8',
-    //     ]);
-
-    //     try {
-    //         $user = new User;
-    //         $user->name = $request->name;
-    //         $user->email = $request->email;
-    //         $user->password = Hash::make($request->password);
-    //         $user->save();
-
-    //         return response()->json([
-    //             'response_code' => 201,
-    //             'status' => 'success',
-    //             'message' => 'Successfully registered',
-    //         ], 201);
-
-    //     } catch (\Exception $e) {
-    //         Log::error('Registration Error: '.$e->getMessage());
-
-    //         return response()->json([
-    //             'response_code' => 500,
-    //             'status' => 'error',
-    //             'message' => 'Registration failed',
-    //         ], 500);
-    //     }
-    // }
-
     public function register(Request $request)
     {
         // Validation
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|email|unique:users',
-            'password' => 'required|min:8',
+            'password' => 'required|min:8|confirmed',
+            'role' => 'sometimes|in:user,admin', // Optional, defaults to 'user'
         ]);
 
         try {
-            // Create user
+            $role = $validated['role'] ?? 'user';
+            
+            // For admin: auto-verify email, no OTP needed
+            if ($role === 'admin') {
+                $user = User::create([
+                    'name' => $validated['name'],
+                    'email' => $validated['email'],
+                    'password' => Hash::make($validated['password']),
+                    'role' => 'admin',
+                    'email_verified_at' => Carbon::now(), // Auto-verify admin
+                    'otp' => null,
+                    'otp_expires_at' => null
+                ]);
+
+                Log::info('Admin user created', ['user_id' => $user->id]);
+
+                // Create token
+                $token = $user->createToken('auth_token')->plainTextToken;
+
+                return response()->json([
+                    'response_code' => 201,
+                    'status' => 'success',
+                    'message' => 'Admin registration successful. You can login immediately.',
+                    'user' => [
+                        'id' => $user->id,
+                        'name' => $user->name,
+                        'email' => $user->email,
+                        'role' => $user->role,
+                        'email_verified_at' => $user->email_verified_at,
+                    ],
+                    'token' => $token,
+                    'email_verified' => true,
+                ], 201);
+            }
+
+            // For regular users: send OTP
+            $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+
             $user = User::create([
                 'name' => $validated['name'],
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']),
+                'role' => 'user',
+                'otp' => $otp,
+                'otp_expires_at' => Carbon::now()->addMinutes(10)
             ]);
 
-            // Log to verify user was created
-            Log::info('User created: '.$user->id);
+            Log::info('User created', ['user_id' => $user->id, 'role' => $user->role]);
 
-            // Fire the Registered event to send verification email
-            event(new \Illuminate\Auth\Events\Registered($user));
+            // Send OTP via email
+            $user->notify(new SendOtpNotification($otp));
 
-            // Log to verify event was fired
-            Log::info('Registered event fired for user: '.$user->email);
+            Log::info('OTP sent to user', ['email' => $user->email]);
 
             // Create token
             $token = $user->createToken('auth_token')->plainTextToken;
@@ -78,11 +87,12 @@ class AuthenticationController extends Controller
             return response()->json([
                 'response_code' => 201,
                 'status' => 'success',
-                'message' => 'Registration successful. Please check your email to verify your account.',
+                'message' => 'Registration successful. Please check your email for the verification code.',
                 'user' => [
                     'id' => $user->id,
                     'name' => $user->name,
                     'email' => $user->email,
+                    'role' => $user->role,
                     'email_verified_at' => $user->email_verified_at,
                 ],
                 'token' => $token,
@@ -90,13 +100,157 @@ class AuthenticationController extends Controller
             ], 201);
 
         } catch (\Exception $e) {
-            Log::error('Registration Error: '.$e->getMessage());
-            Log::error('Stack trace: '.$e->getTraceAsString());
+            Log::error('Registration Error', [
+                'message' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
 
             return response()->json([
                 'response_code' => 500,
                 'status' => 'error',
-                'message' => 'Registration failed: '.$e->getMessage(),
+                'message' => 'Registration failed. Please try again.',
+            ], 500);
+        }
+    }
+
+    /**
+     * Verify OTP for email verification.
+     */
+    public function verifyOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email',
+            'otp' => 'required|string|size:6',
+        ]);
+
+        try {
+            $user = User::where('email', $request->email)->first();
+
+            if (!$user) {
+                return response()->json([
+                    'response_code' => 404,
+                    'status' => 'error',
+                    'message' => 'User not found',
+                ], 404);
+            }
+
+            // Check if already verified
+            if ($user->hasVerifiedEmail()) {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'Email already verified',
+                ], 400);
+            }
+
+            // Admins should not need OTP verification
+            if ($user->role === 'admin') {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'Admin accounts do not require OTP verification',
+                ], 400);
+            }
+
+            // Check OTP expiration
+            if (!$user->otp_expires_at || Carbon::now()->isAfter($user->otp_expires_at)) {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'OTP has expired. Please request a new one.',
+                ], 400);
+            }
+
+            // Verify OTP
+            if ($user->otp !== $request->otp) {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'Invalid OTP',
+                ], 400);
+            }
+
+            // Mark email as verified
+            $user->email_verified_at = Carbon::now();
+            $user->otp = null;
+            $user->otp_expires_at = null;
+            $user->save();
+
+            return response()->json([
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'Email verified successfully',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'email_verified_at' => $user->email_verified_at,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('OTP Verification Error', ['message' => $e->getMessage()]);
+
+            return response()->json([
+                'response_code' => 500,
+                'status' => 'error',
+                'message' => 'Verification failed',
+            ], 500);
+        }
+    }
+
+    /**
+     * Resend OTP for email verification.
+     */
+    public function resendOtp(Request $request)
+    {
+        $request->validate([
+            'email' => 'required|email|exists:users,email',
+        ]);
+
+        try {
+            $user = User::where('email', $request->email)->first();
+
+            if ($user->hasVerifiedEmail()) {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'Email already verified',
+                ], 400);
+            }
+
+            // Admins don't need OTP
+            if ($user->role === 'admin') {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'Admin accounts do not require OTP verification',
+                ], 400);
+            }
+
+            // Generate new OTP
+            $otp = str_pad(random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+            $user->otp = $otp;
+            $user->otp_expires_at = Carbon::now()->addMinutes(10);
+            $user->save();
+
+            // Send OTP
+            $user->notify(new SendOtpNotification($otp));
+
+            return response()->json([
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'OTP sent successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Resend OTP Error', ['message' => $e->getMessage()]);
+
+            return response()->json([
+                'response_code' => 500,
+                'status' => 'error',
+                'message' => 'Failed to send OTP',
             ], 500);
         }
     }
@@ -115,14 +269,34 @@ class AuthenticationController extends Controller
             if (Auth::attempt(['email' => $request->email, 'password' => $request->password])) {
                 $user = Auth::user();
 
-                // Check if email is verified
-                if (! $user->hasVerifiedEmail()) {
+                // Admins can login without email verification
+                if ($user->role === 'admin') {
+                    $accessToken = $user->createToken('authToken')->plainTextToken;
+
+                    return response()->json([
+                        'response_code' => 200,
+                        'status' => 'success',
+                        'message' => 'Admin login successful',
+                        'user_info' => [
+                            'id' => $user->id,
+                            'name' => $user->name,
+                            'email' => $user->email,
+                            'role' => $user->role,
+                            'email_verified_at' => $user->email_verified_at,
+                        ],
+                        'token' => $accessToken,
+                    ]);
+                }
+
+                // Regular users must verify email
+                if (!$user->hasVerifiedEmail()) {
                     Auth::logout();
 
                     return response()->json([
                         'response_code' => 403,
                         'status' => 'error',
-                        'message' => 'Please verify your email address before logging in. Check your inbox for the verification link.',
+                        'message' => 'Please verify your email address before logging in.',
+                        'needs_verification' => true
                     ], 403);
                 }
 
@@ -136,6 +310,7 @@ class AuthenticationController extends Controller
                         'id' => $user->id,
                         'name' => $user->name,
                         'email' => $user->email,
+                        'role' => $user->role,
                         'email_verified_at' => $user->email_verified_at,
                     ],
                     'token' => $accessToken,
@@ -149,7 +324,7 @@ class AuthenticationController extends Controller
             ], 401);
 
         } catch (\Exception $e) {
-            Log::error('Login Error: '.$e->getMessage());
+            Log::error('Login Error', ['message' => $e->getMessage()]);
 
             return response()->json([
                 'response_code' => 500,
@@ -160,21 +335,62 @@ class AuthenticationController extends Controller
     }
 
     /**
-     * Get paginated user list (authenticated).
+     * Get current authenticated user info.
      */
-    public function userInfo()
+    public function me(Request $request)
     {
         try {
-            $users = User::latest()->paginate(10);
+            $user = $request->user();
+
+            return response()->json([
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'User information retrieved successfully',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'email_verified_at' => $user->email_verified_at,
+                ],
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Get User Info Error', ['message' => $e->getMessage()]);
+
+            return response()->json([
+                'response_code' => 500,
+                'status' => 'error',
+                'message' => 'Failed to fetch user information',
+            ], 500);
+        }
+    }
+
+    /**
+     * Get paginated user list (ADMIN ONLY).
+     */
+    public function userList(Request $request)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'response_code' => 403,
+                    'status' => 'error',
+                    'message' => 'Unauthorized. Admin access required.',
+                ], 403);
+            }
+
+            $perPage = $request->input('per_page', 10);
+            $users = User::latest()->paginate($perPage);
 
             return response()->json([
                 'response_code' => 200,
                 'status' => 'success',
                 'message' => 'Fetched user list successfully',
-                'data_user_list' => $users,
+                'data' => $users,
             ]);
         } catch (\Exception $e) {
-            Log::error('User List Error: '.$e->getMessage());
+            Log::error('User List Error', ['message' => $e->getMessage()]);
 
             return response()->json([
                 'response_code' => 500,
@@ -185,28 +401,165 @@ class AuthenticationController extends Controller
     }
 
     /**
-     * Logout the user and revoke token.
+     * Update user role (ADMIN ONLY).
      */
-    public function logOut(Request $request)
+    public function updateUserRole(Request $request, $userId)
     {
         try {
-            if (Auth::check()) {
-                Auth::user()->tokens()->delete();
-
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
                 return response()->json([
-                    'response_code' => 200,
-                    'status' => 'success',
-                    'message' => 'Successfully logged out',
-                ]);
+                    'response_code' => 403,
+                    'status' => 'error',
+                    'message' => 'Unauthorized. Admin access required.',
+                ], 403);
             }
 
+            $validated = $request->validate([
+                'role' => 'required|in:user,admin',
+            ]);
+
+            $user = User::findOrFail($userId);
+
+            // Prevent self-demotion
+            if ($user->id === $request->user()->id) {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'You cannot change your own role',
+                ], 400);
+            }
+
+            $oldRole = $user->role;
+            $user->role = $validated['role'];
+            
+            // If promoting to admin, auto-verify email
+            if ($validated['role'] === 'admin' && !$user->hasVerifiedEmail()) {
+                $user->email_verified_at = Carbon::now();
+                $user->otp = null;
+                $user->otp_expires_at = null;
+            }
+            
+            $user->save();
+
+            Log::info('User role updated', [
+                'user_id' => $user->id,
+                'old_role' => $oldRole,
+                'new_role' => $user->role
+            ]);
+
             return response()->json([
-                'response_code' => 401,
-                'status' => 'error',
-                'message' => 'User not authenticated',
-            ], 401);
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'User role updated successfully',
+                'user' => [
+                    'id' => $user->id,
+                    'name' => $user->name,
+                    'email' => $user->email,
+                    'role' => $user->role,
+                    'email_verified_at' => $user->email_verified_at,
+                ],
+            ]);
+
         } catch (\Exception $e) {
-            Log::error('Logout Error: '.$e->getMessage());
+            Log::error('Update Role Error', ['message' => $e->getMessage()]);
+
+            return response()->json([
+                'response_code' => 500,
+                'status' => 'error',
+                'message' => 'Failed to update user role',
+            ], 500);
+        }
+    }
+
+    /**
+     * Delete user (ADMIN ONLY).
+     */
+    public function deleteUser(Request $request, $userId)
+    {
+        try {
+            // Check if user is admin
+            if ($request->user()->role !== 'admin') {
+                return response()->json([
+                    'response_code' => 403,
+                    'status' => 'error',
+                    'message' => 'Unauthorized. Admin access required.',
+                ], 403);
+            }
+
+            $user = User::findOrFail($userId);
+
+            // Prevent self-deletion
+            if ($user->id === $request->user()->id) {
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'You cannot delete your own account',
+                ], 400);
+            }
+
+            $user->delete();
+
+            return response()->json([
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'User deleted successfully',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Delete User Error', ['message' => $e->getMessage()]);
+
+            return response()->json([
+                'response_code' => 500,
+                'status' => 'error',
+                'message' => 'Failed to delete user',
+            ], 500);
+        }
+    }
+
+    /**
+     * Logout the user and revoke token.
+     */
+    public function logout(Request $request)
+    {
+        try {
+            // Delete current access token
+            $request->user()->tokens()->delete();
+
+            return response()->json([
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'Successfully logged out',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Logout Error', ['message' => $e->getMessage()]);
+
+            return response()->json([
+                'response_code' => 500,
+                'status' => 'error',
+                'message' => 'An error occurred during logout',
+            ], 500);
+        }
+    }
+
+    /**
+     * Logout from all devices.
+     */
+    public function logoutAllDevices(Request $request)
+    {
+        try {
+            // Delete all tokens
+            $request->user()->tokens()->delete();
+
+            return response()->json([
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'Successfully logged out from all devices',
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Logout All Devices Error', ['message' => $e->getMessage()]);
 
             return response()->json([
                 'response_code' => 500,
