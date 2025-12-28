@@ -2,6 +2,10 @@
 
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\AuthenticationController;
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\MealController;
+use App\Http\Controllers\DailyMealPlanController;
+use App\Http\Controllers\MealPlanItemController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -19,6 +23,21 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AuthenticationController::class, 'logout']);
         Route::post('/logout-all', [AuthenticationController::class, 'logoutAllDevices']);
     });
+
+    // Categories
+    Route::apiResource('categories', CategoryController::class);
+    
+    // Meals
+    Route::apiResource('meals', MealController::class);
+    
+    // Daily Meal Plans
+    Route::get('meal-plans/today', [DailyMealPlanController::class, 'today']);
+    Route::apiResource('meal-plans', DailyMealPlanController::class);
+    
+    // Meal Plan Items
+    Route::post('meal-plan-items', [MealPlanItemController::class, 'store']);
+    Route::put('meal-plan-items/{mealPlanItem}', [MealPlanItemController::class, 'update']);
+    Route::delete('meal-plan-items/{mealPlanItem}', [MealPlanItemController::class, 'destroy']);
 
     // Admin only routes
     Route::middleware('is.admin')->prefix('admin')->group(function () {
