@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Controllers\Controller;
 use App\Models\Meal;
 use App\Services\CloudinaryService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Auth;
 use Exception;
 
 class MealController extends Controller
@@ -17,12 +19,21 @@ class MealController extends Controller
     public function index(Request $request): JsonResponse
     {
         try {
-            $query = Meal::with(['category', 'user']);
+            $user = Auth::user();
+            
+            // Base query without unnecessary relationships
+            $query = Meal::query();
 
-            if ($request->filled('meal_type')) {
-                $query->where('meal_type', $request->meal_type);
-            }
+            // Show system meals to all users + custom meals only for the creator
+            $query->where(function($q) use ($user) {
+                $q->where('is_system', true)
+                  ->orWhere(function($subQuery) use ($user) {
+                      $subQuery->where('is_custom', true)
+                               ->where('user_id', $user->id);
+                  });
+            });
 
+            // Apply additional filters
             if ($request->has('is_system')) {
                 $query->where('is_system', $request->boolean('is_system'));
             }
@@ -31,17 +42,32 @@ class MealController extends Controller
                 $query->where('is_custom', $request->boolean('is_custom'));
             }
 
-            if ($request->filled('category_id')) {
+            if ($request->has('category_id')) {
                 $query->where('category_id', $request->category_id);
             }
 
-            $meals = $query->latest()->paginate($request->get('per_page', 15));
+            $meals = $query->paginate($request->get('per_page', 15));
+
+            // Format the data to show only required fields
+            $formattedData = collect($meals->items())->map(function ($meal) {
+                return [
+                    'id' => $meal->id,
+                    'name' => $meal->name,
+                    'category_id' => $meal->category_id,
+                    'user_id' => $meal->user_id,
+                    'is_system' => $meal->is_system,
+                    'is_custom' => $meal->is_custom,
+                    'description' => $meal->description,
+                    'meal_type' => $meal->meal_type,
+                    'image_url' => $meal->image_url,
+                ];
+            });
 
             return response()->json([
                 'response_code' => 200,
                 'status' => 'success',
                 'message' => 'Meals fetched successfully',
-                'data' => $meals->items(),
+                'data' => $formattedData,
                 'pagination' => [
                     'current_page' => $meals->currentPage(),
                     'per_page' => $meals->perPage(),
@@ -71,16 +97,24 @@ class MealController extends Controller
             $validated = $request->validate([
                 'name' => 'required|string|max:255',
                 'category_id' => 'required|exists:categories,id',
-                'meal_type' => 'required|in:Breakfast,Lunch,Dinner',
                 'description' => 'nullable|string',
+                'meal_type' => 'required|in:Breakfast,Lunch,Dinner',
                 'image' => 'nullable|image|max:5120', // 5MB
             ]);
 
-            $validated['user_id'] = auth()->id() ?? 1;
-            $validated['is_custom'] = true;
-            $validated['is_system'] = false;
+            $user = Auth::user();
+            $validated['user_id'] = $user->id;
 
-            // ✅ Upload image to Cloudinary
+            // Check if user is admin and set flags accordingly
+            if ($user->role === 'admin') {
+                $validated['is_system'] = true;
+                $validated['is_custom'] = false;
+            } else {
+                $validated['is_system'] = false;
+                $validated['is_custom'] = true;
+            }
+
+            // Upload image to Cloudinary
             if ($request->hasFile('image')) {
                 $validated['image_url'] = $cloudinary->upload(
                     $request->file('image'),
@@ -90,11 +124,24 @@ class MealController extends Controller
 
             $meal = Meal::create($validated);
 
+            // Format the response
+            $formattedMeal = [
+                'id' => $meal->id,
+                'name' => $meal->name,
+                'category_id' => $meal->category_id,
+                'user_id' => $meal->user_id,
+                'is_system' => $meal->is_system,
+                'is_custom' => $meal->is_custom,
+                'description' => $meal->description,
+                'meal_type' => $meal->meal_type,
+                'image_url' => $meal->image_url,
+            ];
+
             return response()->json([
                 'response_code' => 201,
                 'status' => 'success',
                 'message' => 'Meal created successfully',
-                'data' => $meal->load(['category', 'user']),
+                'data' => $formattedMeal
             ], 201);
 
         } catch (ValidationException $e) {
@@ -121,11 +168,36 @@ class MealController extends Controller
     public function show(Meal $meal): JsonResponse
     {
         try {
+            $user = Auth::user();
+            
+            // Check if user can access this meal
+            if (!$meal->is_system && $meal->user_id !== $user->id) {
+                return response()->json([
+                    'response_code' => 403,
+                    'status' => 'error',
+                    'message' => 'You do not have permission to view this meal',
+                    'data' => null
+                ], 403);
+            }
+
+            // Format the data
+            $formattedMeal = [
+                'id' => $meal->id,
+                'name' => $meal->name,
+                'category_id' => $meal->category_id,
+                'user_id' => $meal->user_id,
+                'is_system' => $meal->is_system,
+                'is_custom' => $meal->is_custom,
+                'description' => $meal->description,
+                'meal_type' => $meal->meal_type,
+                'image_url' => $meal->image_url,
+            ];
+
             return response()->json([
                 'response_code' => 200,
                 'status' => 'success',
                 'message' => 'Meal fetched successfully',
-                'data' => $meal->load(['category', 'user']),
+                'data' => $formattedMeal
             ], 200);
 
         } catch (Exception $e) {
@@ -133,7 +205,8 @@ class MealController extends Controller
                 'response_code' => 500,
                 'status' => 'error',
                 'message' => 'Failed to fetch meal',
-                'error' => $e->getMessage(),
+                'data' => null,
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -147,16 +220,29 @@ class MealController extends Controller
         CloudinaryService $cloudinary
     ): JsonResponse {
         try {
+            $user = Auth::user();
+            
+            // Check if user can update this meal
+            $isAdmin = $user->role === 'admin';
+            
+            if (!$isAdmin && $meal->user_id !== $user->id) {
+                return response()->json([
+                    'response_code' => 403,
+                    'status' => 'error',
+                    'message' => 'You do not have permission to update this meal',
+                    'data' => null
+                ], 403);
+            }
+
             $validated = $request->validate([
                 'name' => 'sometimes|string|max:255',
                 'category_id' => 'sometimes|exists:categories,id',
-                'meal_type' => 'sometimes|in:Breakfast,Lunch,Dinner',
                 'description' => 'nullable|string',
-                'is_system' => 'sometimes|boolean',
-                'is_custom' => 'sometimes|boolean',
-                'image' => 'nullable|image|max:5120',
+                'meal_type' => 'sometimes|in:Breakfast,Lunch,Dinner',
+                'image' => 'nullable|image|max:5120', // 5MB
             ]);
 
+            // Upload new image if provided
             if ($request->hasFile('image')) {
                 $validated['image_url'] = $cloudinary->upload(
                     $request->file('image'),
@@ -166,11 +252,24 @@ class MealController extends Controller
 
             $meal->update($validated);
 
+            // Format the response
+            $formattedMeal = [
+                'id' => $meal->id,
+                'name' => $meal->name,
+                'category_id' => $meal->category_id,
+                'user_id' => $meal->user_id,
+                'is_system' => $meal->is_system,
+                'is_custom' => $meal->is_custom,
+                'description' => $meal->description,
+                'meal_type' => $meal->meal_type,
+                'image_url' => $meal->image_url,
+            ];
+
             return response()->json([
                 'response_code' => 200,
                 'status' => 'success',
                 'message' => 'Meal updated successfully',
-                'data' => $meal->load(['category', 'user']),
+                'data' => $formattedMeal
             ], 200);
 
         } catch (ValidationException $e) {
@@ -178,7 +277,8 @@ class MealController extends Controller
                 'response_code' => 422,
                 'status' => 'error',
                 'message' => 'Validation error',
-                'errors' => $e->errors(),
+                'data' => null,
+                'errors' => $e->errors()
             ], 422);
 
         } catch (Exception $e) {
@@ -186,7 +286,8 @@ class MealController extends Controller
                 'response_code' => 500,
                 'status' => 'error',
                 'message' => 'Failed to update meal',
-                'error' => $e->getMessage(),
+                'data' => null,
+                'error' => $e->getMessage()
             ], 500);
         }
     }
@@ -197,6 +298,20 @@ class MealController extends Controller
     public function destroy(Meal $meal): JsonResponse
     {
         try {
+            $user = Auth::user();
+            
+            // Check if user can delete this meal
+            $isAdmin = $user->role === 'admin';
+            
+            if (!$isAdmin && $meal->user_id !== $user->id) {
+                return response()->json([
+                    'response_code' => 403,
+                    'status' => 'error',
+                    'message' => 'You do not have permission to delete this meal',
+                    'data' => null
+                ], 403);
+            }
+
             $meal->delete();
 
             return response()->json([

@@ -18,6 +18,10 @@ return Application::configure(basePath: dirname(__DIR__))
 
         // ✅ DO NOT redirect API users to login page
         $middleware->redirectGuestsTo(fn () => null);
+        
+        $middleware->alias([
+            'is.admin' => \App\Http\Middleware\IsAdmin::class,
+        ]);
 
     })
     ->withExceptions(function (Exceptions $exceptions) {

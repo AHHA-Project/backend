@@ -17,7 +17,6 @@ class Meal extends Model
         'user_id',
         'is_system',
         'is_custom',
-        'description',
         'meal_type',
         'image_url',
     ];
