@@ -24,6 +24,12 @@ class User extends Authenticatable implements MustVerifyEmail
         'role',
         'otp',
         'otp_expires_at',
+        'profile_img',
+        'is_active',
+        'deactivated_at',
+        'deactivated_by',
+        'activated_at',
+        'activated_by',
     ];
 
     /**
@@ -48,13 +54,14 @@ class User extends Authenticatable implements MustVerifyEmail
             'email_verified_at' => 'datetime',
             'otp_expires_at' => 'datetime',
             'password' => 'hashed',
+            'is_active' => 'boolean',
+            'deactivated_at' => 'datetime',
+            'activated_at' => 'datetime',
         ];
     }
 
     /**
      * Check if user is admin.
-     *
-     * @return bool
      */
     public function isAdmin(): bool
     {
@@ -63,8 +70,6 @@ class User extends Authenticatable implements MustVerifyEmail
 
     /**
      * Check if user is normal user.
-     *
-     * @return bool
      */
     public function isUser(): bool
     {
@@ -73,7 +78,7 @@ class User extends Authenticatable implements MustVerifyEmail
 }
 /*
 To add the admin
-1. php artisan tinker 
+1. php artisan tinker
 2. paste this
 \App\Models\User::create([
     'name' => 'Admin User',

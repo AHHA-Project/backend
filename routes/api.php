@@ -6,6 +6,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\MealController;
 use App\Http\Controllers\DailyMealPlanController;
 use App\Http\Controllers\MealPlanItemController;
+use App\Http\Controllers\UserController;
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -22,6 +23,7 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AuthenticationController::class, 'me']);
         Route::post('/logout', [AuthenticationController::class, 'logout']);
         Route::post('/logout-all', [AuthenticationController::class, 'logoutAllDevices']);
+        Route::post('/upload-profile', [UserController::class, 'store']);
     });
 
     // Categories
@@ -41,8 +43,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Admin only routes
     Route::middleware('is.admin')->prefix('admin')->group(function () {
-        Route::get('/users', [AuthenticationController::class, 'userList']);
-        Route::put('/users/{userId}/role', [AuthenticationController::class, 'updateUserRole']);
-        Route::delete('/users/{userId}', [AuthenticationController::class, 'deleteUser']);
+        Route::get('/users', [UserController::class, 'userList']);
+        Route::put('/users/{userId}/role', [UserController::class, 'updateUserRole']);
+        Route::patch('/users/{userId}', [UserController::class, 'toggleUserStatus']);
     });
 });
