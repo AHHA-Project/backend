@@ -6,7 +6,11 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\MealController;
 use App\Http\Controllers\DailyMealPlanController;
 use App\Http\Controllers\MealPlanItemController;
+
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\UserPreferenceController;
+use App\Http\Controllers\RecommendationController;
+
 
 // Public routes
 Route::prefix('auth')->group(function () {
@@ -23,8 +27,18 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/me', [AuthenticationController::class, 'me']);
         Route::post('/logout', [AuthenticationController::class, 'logout']);
         Route::post('/logout-all', [AuthenticationController::class, 'logoutAllDevices']);
-        Route::post('/upload-profile', [UserController::class, 'store']);
     });
+    // Profile
+    Route::post('/user/profile-image', [UserController::class, 'updateProfileImage']);
+
+     // Mobile App Meal Planner
+    Route::prefix('daily-meal-plans')->group(function () {
+        Route::get('/', [DailyMealPlanController::class, 'index']);
+        Route::post('/add-meal', [DailyMealPlanController::class, 'addMeal']);
+    });
+
+    Route::post('/user/preferences', [UserPreferenceController::class, 'store']);
+    Route::get('/recommend-meals', [RecommendationController::class, 'index']);
 
     // Categories
     Route::apiResource('categories', CategoryController::class);
@@ -35,6 +49,8 @@ Route::middleware('auth:sanctum')->group(function () {
     // Daily Meal Plans
     Route::get('meal-plans/today', [DailyMealPlanController::class, 'today']);
     Route::apiResource('meal-plans', DailyMealPlanController::class);
+    // routes/api.php
+
     
     // Meal Plan Items
     Route::post('meal-plan-items', [MealPlanItemController::class, 'store']);

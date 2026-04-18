@@ -241,4 +241,70 @@ class UserController extends Controller
             ], 500);
         }
     }
+
+    public function updateProfileImage(
+    Request $request,
+    CloudinaryService $cloudinary
+    ): JsonResponse {
+        try {
+            $request->validate([
+                'profile_img' => 'required|image|max:5120',
+            ]);
+
+            $user = Auth::user();
+
+            if (! $request->hasFile('profile_img')) {
+                \Log::error('PROFILE IMAGE NOT FOUND IN REQUEST');
+                return response()->json([
+                    'response_code' => 400,
+                    'status' => 'error',
+                    'message' => 'No profile image received',
+                ], 400);
+            }
+            $imageUrl = $cloudinary->upload(
+                $request->file('profile_img'),
+                'users'
+            );
+
+            if (! $imageUrl) {
+                throw new \Exception('Cloudinary upload failed');
+            }
+
+            $user->profile_img = $imageUrl;
+            $user->save();
+
+            return response()->json([
+                'response_code' => 200,
+                'status' => 'success',
+                'message' => 'Profile image updated successfully',
+                'data' => [
+                    'id' => $user->id,
+                    'profile_img' => $user->profile_img,
+                ],
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'response_code' => 422,
+                'status' => 'error',
+                'message' => 'Validation error',
+                'errors' => $e->errors(),
+            ], 422);
+
+        } catch (\Exception $e) {
+            \Log::error('PROFILE IMAGE UPLOAD ERROR', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'response_code' => 500,
+                'status' => 'error',
+                'message' => 'Failed to update profile image',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
+
 }
