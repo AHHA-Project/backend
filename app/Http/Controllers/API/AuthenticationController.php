@@ -283,6 +283,7 @@ class AuthenticationController extends Controller
                             'email' => $user->email,
                             'role' => $user->role,
                             'email_verified_at' => $user->email_verified_at,
+                            'profile_img' => $user->profile_img,
                         ],
                         'token' => $accessToken,
                     ]);
@@ -352,6 +353,7 @@ class AuthenticationController extends Controller
                     'email' => $user->email,
                     'role' => $user->role,
                     'email_verified_at' => $user->email_verified_at,
+                    'profile_img' => $user->profile_img,
                 ],
             ]);
         } catch (\Exception $e) {
