@@ -9,6 +9,8 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use App\Models\Category;
 use App\Models\UserFavoriteMealType;
+use App\Models\DailyMealPlan;
+use App\Models\MealPlanItem;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -54,11 +56,11 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return [
             'email_verified_at' => 'datetime',
-            'otp_expires_at' => 'datetime',
-            'password' => 'hashed',
-            'is_active' => 'boolean',
-            'deactivated_at' => 'datetime',
-            'activated_at' => 'datetime',
+            'otp_expires_at'    => 'datetime',
+            'password'          => 'hashed',
+            'is_active'         => 'boolean',
+            'deactivated_at'    => 'datetime',
+            'activated_at'      => 'datetime',
         ];
     }
 
@@ -89,7 +91,27 @@ class User extends Authenticatable implements MustVerifyEmail
     {
         return $this->hasMany(UserFavoriteMealType::class);
     }
+
+    // DAILY MEAL PLANS RELATION
+    public function dailyMealPlans()
+    {
+        return $this->hasMany(DailyMealPlan::class);
+    }
+
+    // MEAL PLAN ITEMS (through daily meal plans) — used for Phase 2/3 recommendations
+    public function mealPlanItems()
+    {
+        return $this->hasManyThrough(
+            MealPlanItem::class,
+            DailyMealPlan::class,
+            'user_id',   
+            'planner_id', 
+            'id',         
+            'id'          
+        );
+    }
 }
+
 /*
 To add the admin
 1. php artisan tinker
@@ -101,5 +123,4 @@ To add the admin
     'role' => 'admin',
     'email_verified_at' => now(),
 ]);
-
- */
+*/

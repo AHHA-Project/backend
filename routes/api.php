@@ -10,6 +10,7 @@ use App\Http\Controllers\MealPlanItemController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\RecommendationController;
+use App\Http\Controllers\PopularMealController;
 
 
 // Public routes
@@ -37,8 +38,12 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/add-meal', [DailyMealPlanController::class, 'addMeal']);
     });
 
+    // User Preferences & Recommendations
     Route::post('/user/preferences', [UserPreferenceController::class, 'store']);
     Route::get('/recommend-meals', [RecommendationController::class, 'index']);
+
+    // Popular Meals
+    Route::get('/popular-meals', [PopularMealController::class, 'index']);
 
     // Categories
     Route::apiResource('categories', CategoryController::class);
