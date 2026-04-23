@@ -11,6 +11,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\PopularMealController;
+use App\Http\Controllers\FavoriteController;
 
 
 // Public routes
@@ -44,6 +45,14 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Popular Meals
     Route::get('/popular-meals', [PopularMealController::class, 'index']);
+
+    // Favorites
+    Route::prefix('favorites')->group(function () {
+    Route::get('/',              [FavoriteController::class, 'index']);
+    Route::post('/',             [FavoriteController::class, 'store']);
+    Route::delete('/{mealId}',   [FavoriteController::class, 'destroy']);
+    Route::post('/toggle',       [FavoriteController::class, 'toggle']);
+});
 
     // Categories
     Route::apiResource('categories', CategoryController::class);

@@ -11,6 +11,7 @@ use App\Models\Category;
 use App\Models\UserFavoriteMealType;
 use App\Models\DailyMealPlan;
 use App\Models\MealPlanItem;
+use App\Models\UserFavorite;
 
 class User extends Authenticatable implements MustVerifyEmail
 {
@@ -110,6 +111,13 @@ class User extends Authenticatable implements MustVerifyEmail
             'id'          
         );
     }
+
+    // ADD relationship
+    public function favorites()
+    {
+        return $this->hasMany(UserFavorite::class);
+    }
+
 }
 
 /*
