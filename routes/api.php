@@ -12,6 +12,7 @@ use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\RecommendationController;
 use App\Http\Controllers\PopularMealController;
 use App\Http\Controllers\FavoriteController;
+use App\Http\Controllers\AiMealController;
 
 
 // Public routes
@@ -45,6 +46,11 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Popular Meals
     Route::get('/popular-meals', [PopularMealController::class, 'index']);
+    // Save AI Generated Meal
+    Route::post('/meals/ai-save', [MealController::class, 'saveAiMeal']);
+
+    // AI Meal Generation
+    Route::post('/ai/generate-meal', [AiMealController::class, 'generateMeal']);
 
     // Favorites
     Route::prefix('favorites')->group(function () {

@@ -329,4 +329,86 @@ class MealController extends Controller
             ], 500);
         }
     }
+
+    
+    public function saveAiMeal(
+    Request $request,
+    CloudinaryService $cloudinary
+    ): JsonResponse {
+        try {
+            $validated = $request->validate([
+                'name'        => 'required|string|max:255',
+                'description' => 'nullable|string',
+                'meal_type'   => 'required|in:Breakfast,Lunch,Dinner',
+                'category_id' => 'required|integer|exists:categories,id',
+                'image_url'   => 'nullable|string',
+            ]);
+
+            $imageUrl = null;
+
+            // Download from Unsplash and upload to Cloudinary
+            if (!empty($validated['image_url'])) {
+                try {
+                    $imageContents = file_get_contents($validated['image_url']);
+                    $tempPath = tempnam(sys_get_temp_dir(), 'ai_meal_') . '.jpg';
+                    file_put_contents($tempPath, $imageContents);
+
+                    $uploadedFile = new \Illuminate\Http\UploadedFile(
+                        $tempPath,
+                        'ai_meal.jpg',
+                        'image/jpeg',
+                        null,
+                        true
+                    );
+
+                    $imageUrl = $cloudinary->upload($uploadedFile, 'meals');
+                    @unlink($tempPath); // cleanup temp file
+
+                } catch (\Exception $e) {
+                    // fallback to original URL if upload fails
+                    $imageUrl = $validated['image_url'];
+                    \Log::warning('Cloudinary upload failed, using original URL', [
+                        'error' => $e->getMessage()
+                    ]);
+                }
+            }
+
+            $meal = Meal::create([
+                'name'        => $validated['name'],
+                'description' => $validated['description'] ?? null,
+                'meal_type'   => $validated['meal_type'],
+                'category_id' => $validated['category_id'],
+                'user_id'     => Auth::id(),
+                'image_url'   => $imageUrl,
+                'is_system'   => false,
+                'is_custom'   => true,
+            ]);
+
+            return response()->json([
+                'response_code' => 201,
+                'status'        => 'success',
+                'message'       => 'AI meal saved successfully',
+                'data'          => [
+                    'id'          => $meal->id,
+                    'name'        => $meal->name,
+                    'description' => $meal->description,
+                    'meal_type'   => $meal->meal_type,
+                    'category_id' => $meal->category_id,
+                    'user_id'     => $meal->user_id,
+                    'is_system'   => $meal->is_system,
+                    'is_custom'   => $meal->is_custom,
+                    'image_url'   => $meal->image_url,
+                ],
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'response_code' => 500,
+                'status'        => 'error',
+                'message'       => 'Failed to save AI meal',
+                'error'         => $e->getMessage(),
+            ], 500);
+        }
+    }
+
 }
