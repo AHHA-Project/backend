@@ -336,6 +336,7 @@ class MealController extends Controller
     CloudinaryService $cloudinary
     ): JsonResponse {
         try {
+            // \Log::info('AI MEAL SAVE REQUEST', $request->all());
             $validated = $request->validate([
                 'name'        => 'required|string|max:255',
                 'description' => 'nullable|string',

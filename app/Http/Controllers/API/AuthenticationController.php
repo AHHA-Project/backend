@@ -394,9 +394,54 @@ class AuthenticationController extends Controller
         }
     }
 
-    /**
-     * Logout from all devices.
-     */
+    // Change password for authenticated user
+    public function changePassword(Request $request)
+    {
+        try {
+            $request->validate([
+                'current_password' => 'required|string',
+                'new_password'     => 'required|string|min:8|confirmed',
+            ]);
+
+            $user = $request->user();
+
+            // Check current password
+            if (!\Hash::check($request->current_password, $user->password)) {
+                return response()->json([
+                    'response_code' => 400,
+                    'status'        => 'error',
+                    'message'       => 'Current password is incorrect',
+                ], 400);
+            }
+
+            // Update password
+            $user->password = \Hash::make($request->new_password);
+            $user->save();
+
+            return response()->json([
+                'response_code' => 200,
+                'status'        => 'success',
+                'message'       => 'Password changed successfully',
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'response_code' => 422,
+                'status'        => 'error',
+                'message'       => 'Validation error',
+                'errors'        => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'response_code' => 500,
+                'status'        => 'error',
+                'message'       => 'Failed to change password',
+            ], 500);
+        }
+    }
+
+    
+    //Logout from all devices.
     public function logoutAllDevices(Request $request)
     {
         try {

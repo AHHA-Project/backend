@@ -31,6 +31,10 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::post('/logout', [AuthenticationController::class, 'logout']);
         Route::post('/logout-all', [AuthenticationController::class, 'logoutAllDevices']);
     });
+
+    // Change password
+    Route::post('/user/change-password', [AuthenticationController::class, 'changePassword']);
+    
     // Profile
     Route::post('/user/profile-image', [UserController::class, 'updateProfileImage']);
 

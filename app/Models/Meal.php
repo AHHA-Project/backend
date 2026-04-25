@@ -14,6 +14,7 @@ class Meal extends Model
     protected $fillable = [
         'name',
         'category_id',
+        'description',
         'user_id',
         'is_system',
         'is_custom',
