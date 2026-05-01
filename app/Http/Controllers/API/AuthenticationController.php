@@ -76,16 +76,13 @@ class AuthenticationController extends Controller
 
             Log::info('User created', ['user_id' => $user->id, 'role' => $user->role]);
 
+            // Send OTP via email
+            $user->notify(new SendOtpNotification($otp));
+
+            Log::info('OTP sent to user', ['email' => $user->email]);
+
             // Create token
             $token = $user->createToken('auth_token')->plainTextToken;
-
-            // Send OTP email
-            try {
-                $user->notify(new SendOtpNotification($otp));
-                Log::info('OTP sent to user', ['email' => $user->email]);
-            } catch (\Exception $e) {
-                Log::error('Failed to send OTP email', ['error' => $e->getMessage()]);
-            }
 
             return response()->json([
                 'response_code' => 201,
