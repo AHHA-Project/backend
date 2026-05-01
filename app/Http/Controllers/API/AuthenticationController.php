@@ -76,11 +76,18 @@ class AuthenticationController extends Controller
 
             Log::info('User created', ['user_id' => $user->id, 'role' => $user->role]);
 
-            // Create token FIRST
+            // Create token
             $token = $user->createToken('auth_token')->plainTextToken;
 
-            // Return response IMMEDIATELY
-            $response = response()->json([
+            // Send OTP email
+            try {
+                $user->notify(new SendOtpNotification($otp));
+                Log::info('OTP sent to user', ['email' => $user->email]);
+            } catch (\Exception $e) {
+                Log::error('Failed to send OTP email', ['error' => $e->getMessage()]);
+            }
+
+            return response()->json([
                 'response_code' => 201,
                 'status' => 'success',
                 'message' => 'Registration successful. Please check your email for the verification code.',
@@ -94,16 +101,6 @@ class AuthenticationController extends Controller
                 'token' => $token,
                 'email_verified' => false,
             ], 201);
-
-            // Send OTP email AFTER response
-            ob_start();
-            $response->send();
-            ob_end_clean();
-
-            $user->notify(new SendOtpNotification($otp));
-            Log::info('OTP sent to user', ['email' => $user->email]);
-
-            exit();
 
         } catch (\Exception $e) {
             Log::error('Registration Error', [
